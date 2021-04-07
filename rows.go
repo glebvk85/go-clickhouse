@@ -1,6 +1,7 @@
 package clickhouse
 
 import (
+	"bufio"
 	"database/sql/driver"
 	"fmt"
 	"io"
@@ -107,7 +108,7 @@ func newTextRows(c *conn, body io.ReadCloser, location *time.Location, useDBLoca
 type textRows struct {
 	c        *conn
 	respBody io.ReadCloser
-	tsv      *csv.Reader
+	tsv      DataReader
 	columns  []string
 	types    []string
 	parsers  []DataParser
