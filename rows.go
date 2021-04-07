@@ -2,7 +2,6 @@ package clickhouse
 
 import (
 	"database/sql/driver"
-	"encoding/csv"
 	"fmt"
 	"io"
 	"reflect"
@@ -10,10 +9,58 @@ import (
 	"time"
 )
 
+type TsvParser struct {
+    r *bufio.Reader
+    rawBuffer []byte
+}
+
+type DataReader interface {
+    Read() (record []string, err error)
+}
+
+func newReader(r io.Reader) *TsvParser {
+	return &TsvParser{
+		r:     bufio.NewReader(r),
+	}
+}
+
+
+func (r *TsvParser) readLine() ([]byte, error) {
+	line, err := r.r.ReadSlice('\n')
+	if err == bufio.ErrBufferFull {
+		r.rawBuffer = append(r.rawBuffer[:0], line...)
+		for err == bufio.ErrBufferFull {
+			line, err = r.r.ReadSlice('\n')
+			r.rawBuffer = append(r.rawBuffer, line...)
+		}
+		line = r.rawBuffer
+	}
+	if len(line) > 0 && err == io.EOF {
+		err = nil
+		// For backwards compatibility, drop trailing \r before EOF.
+		if line[len(line)-1] == '\r' {
+			line = line[:len(line)-1]
+		}
+	}
+	// Normalize \r\n to \n on all input lines.
+	if n := len(line); n >= 2 && line[n-2] == '\r' && line[n-1] == '\n' {
+		line[n-2] = '\n'
+		line = line[:n-1]
+	}
+	return line, err
+}
+
+func (r *TsvParser) Read() (record []string, err error) {
+    line, errRead := r.readLine()
+    if errRead != nil {
+        return nil, errRead
+    }
+    t := strings.Split(strings.Trim(string(line), "\n"), "\t")
+    return t, nil
+}
+
 func newTextRows(c *conn, body io.ReadCloser, location *time.Location, useDBLocation bool) (*textRows, error) {
-	tsvReader := csv.NewReader(body)
-	tsvReader.Comma = '\t'
-	tsvReader.LazyQuotes = true
+	tsvReader := newReader(body)
 
 	columns, err := tsvReader.Read()
 	if err != nil {
